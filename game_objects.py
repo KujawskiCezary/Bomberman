@@ -65,15 +65,15 @@ class Player(GameObject):
         self._GameObject__y = value
 
     def set_x(self, value):
-        if value >= 0 and value < 40 and Block(value, self.y) not in self.__game.blocks \
-                and not isinstance(
-                    next(filter(lambda bomb: bomb.x == value and bomb.y == self.y, self.__game.bombs), None), Bomb):
+        if 0 <= value < 40 and Block(value, self.y) not in self.__game.blocks \
+                and not next(filter(lambda bomb: bomb.x == value and bomb.y == self.y, self.__game.bombs),
+                         Bomb(0, 0, 0, 0, False)).alive:
             self._GameObject__x = value
 
     def set_y(self, value):
-        if value >= 0 and value < 40 and Block(self.x, value) not in self.__game.blocks \
-                and not isinstance(
-                    next(filter(lambda bomb: bomb.x == self.x and bomb.y == value, self.__game.bombs), None), Bomb):
+        if 0 <= value < 40 and Block(self.x, value) not in self.__game.blocks \
+                and not next(filter(lambda bomb: bomb.x == self.x and bomb.y == value, self.__game.bombs),
+                         Bomb(0, 0, 0, 0, False)).alive:
             self._GameObject__y = value
 
     @property
@@ -100,12 +100,12 @@ class Bomb(GameObject):
 
     def check_if_dead(self, game_objects):
         for game_object in game_objects:
-            if (self.x - self.range < game_object.x and self.x + self.range > game_object.x and self.y == game_object.y) \
-                    or (
-                                            self.y - self.range < game_object.y and self.y + self.range > game_object.y and self.x == game_object.x) \
+            if (self.x - self.range < game_object.x < self.x + self.range and self.y == game_object.y) \
+                    or (self.y - self.range < game_object.y < self.y + self.range and self.x == game_object.x) \
                             and (not isinstance(game_object, Block) or game_object.destroyable):
+                print(game_object)
                 game_object.alive = False
-
+                print(game_object)
     @property
     def range(self):
         return self.__range

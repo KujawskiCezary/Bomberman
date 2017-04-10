@@ -3,13 +3,14 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt, QBasicTimer, QRect
 from PyQt5.QtWidgets import QLabel, QWidget, QApplication, QMainWindow, QPushButton
 from PyQt5.QtWidgets import QVBoxLayout
-
+import random
 from game import Game
-from game_objects import Player
+from game_objects import Player, Block, Bomb
 from game_parser import parse
 import socket
 import threading
 import jsonpickle
+import time
 
 class GUI(QMainWindow):
     def __init__(self):
@@ -42,16 +43,15 @@ class GUI(QMainWindow):
         self.label_blocks1 = [[QLabel(self), block] for block in self.__game.blocks if not block.destroyable]
         for label in self.label_blocks1:
             label[0].setPixmap(QPixmap('block1.jpg'))
+            label[0].setGeometry(QRect(15 * label[1].x, 15 * label[1].y, 15, 15))
         self.label_blocks2 = [[QLabel(self), block] for block in self.__game.blocks if block.destroyable]
         for label in self.label_blocks2:
             label[0].setPixmap(QPixmap('block2.jpg'))
+            label[0].setGeometry(QRect(15 * label[1].x, 15 * label[1].y, 15, 15))
+
+        threading.Thread(target=self.ai, args=(3,)).start()
+        threading.Thread(target=self.ai, args=(4,)).start()
         self.show()
-
-    def client(self):
-        print('client')
-
-    def server(self):
-        print('server')
 
     def timerEvent(self, event):
         if event.timerId() == self.timer.timerId():
@@ -60,19 +60,21 @@ class GUI(QMainWindow):
             super.timerEvent(event)
 
     def paintEvent(self, *args, **kwargs):
-        #print(self.__game.players)
         try:
             new_bombs = set(self.__game.bombs).difference(set(self.bombs))
             if len(new_bombs) > 0:
                 self.bombs.extend(list(new_bombs))
                 for bomb in new_bombs:
                     self.label_bombs.append([self.labels_for_bombs.pop(), bomb])
-                    print('new_bomb', bomb)
 
-            for label in self.label_players + self.label_blocks1 + self.label_blocks2 + self.label_bombs:
+            for label in self.label_players + self.label_bombs:
                 if label[1].alive:
                     label[0].setGeometry(QRect(15 * label[1].x, 15 * label[1].y, 15, 15))
                 else:
+                    label[0].hide()
+
+            for label in self.label_blocks2:
+                if not label[1].alive:
                     label[0].hide()
         except:
             pass
@@ -97,7 +99,7 @@ class GUI(QMainWindow):
         if e.key() == Qt.Key_Escape:
             self.close()
         if e.key() == Qt.Key_Q:
-            print(self.__player)
+            print(self.__player, end = '')
 
     def recieve(self, socket):
         while True:
@@ -107,9 +109,7 @@ class GUI(QMainWindow):
                 if isinstance(game_object, Player):
                     self.__game.players[int(game_object.id) - 1].x = (int(game_object.x))
                     self.__game.players[int(game_object.id) - 1].y = (int(game_object.y))
-                    print( self.label_players[int(game_object.id) - 1][1])
                     self.label_players[int(game_object.id) - 1][1] = game_object
-                    print(self.label_players[int(game_object.id) - 1][1])
                 else:
                     self.__game.bomb_it(game_object)
 
@@ -133,7 +133,71 @@ class GUI(QMainWindow):
         clientsocket.connect(('Czarek', 8080))
         resp = clientsocket.recv(4048).decode('utf-8')
         game = jsonpickle.decode(resp)
-        print(game)
+
+    def ai(self, id):
+        player = next(filter(lambda player: player.id == id, self.__game.players), None)
+        while True and player.alive:
+            time.sleep(0.1)
+            moves_score = []
+            moves_score.append(self.assign_move(player, 'Up'))
+            moves_score.append(self.assign_move(player, 'Down'))
+            moves_score.append(self.assign_move(player, 'Left'))
+            moves_score.append(self.assign_move(player, 'Right'))
+            moves_score.append(self.assign_move(player, 'Bomb'))
+            moves_score.sort(key=lambda move:move[0])
+            print(moves_score)
+            if moves_score[0][1] == 'Bomb':
+                bomb = player.place_bomb()
+                self.__game.bomb_it(bomb)
+                self.send(bomb)
+            else:
+                player.move(moves_score[0][1], self.__game)
+                self.send(player)
+
+
+    def assign_move(self, player, move):
+        if move == 'Up':
+            points = 100 * self.in_bomb_range(player.x, player.y - 1) + 400 * self.move_is_viable(player.x, player.y - 1)
+        elif move == 'Down':
+            points = 100 * self.in_bomb_range(player.x, player.y + 1) + 400 * self.move_is_viable(player.x, player.y + 1)
+        elif move == 'Left':
+            points = 100 * self.in_bomb_range(player.x - 1, player.y) + 400 * self.move_is_viable(player.x - 1, player.y)
+        elif move == 'Right':
+            points = 100 * self.in_bomb_range(player.x + 1, player.y) + 400 * self.move_is_viable(player.x + 1, player.y)
+        else:
+            points = 100 * self.in_bomb_range(player.x, player.y)
+            return points + random.randint(1, 10) - 50*self.bomb_can_kill_anything(player), move
+        return points + random.randint(1,10), move
+
+    def in_bomb_range(self, x, y):
+        for bomb in filter(lambda bomb:bomb.alive, self.__game.bombs):
+            if bomb.x == x and bomb.y == y:
+                return 2
+            if (bomb.x - bomb.range < x < bomb.x + bomb.range and bomb.y == y) \
+                    or (bomb.y - bomb.range < y < bomb.y + bomb.range and bomb.x == x):
+                #print('bomba blisko')
+                return 1
+        return 0
+
+    def bomb_can_kill_anything(self, player):
+        for game_object in self.__game.players and self.__game.blocks:
+            if game_object.alive and (not isinstance(game_object, Block) or game_object.destroyable) \
+                and (player.x - 3 < game_object.x < player.x + 3 and player.y == game_object.y
+                     or player.y - 3 < game_object.y < player.y + 3 and player.x == game_object.x):
+                #print('obiekt blisko')
+                return 1
+
+        return -1
+
+    def move_is_viable(self, x, y):
+        if (0 <= x < 40 and Block(x, self.y) not in self.__game.blocks \
+                and not next(filter(lambda bomb: bomb.x == x and bomb.y == y, self.__game.bombs),
+                             Bomb(0, 0, 0, 0, False)).alive)\
+                and (0 <= y < 40 and Block(self.x, y) not in self.__game.blocks \
+                and not next(filter(lambda bomb: bomb.x == x and bomb.y == y, self.__game.bombs),
+                         Bomb(0, 0, 0, 0, False)).alive):
+            return 0
+        return 1
 
 
 if __name__ == '__main__':

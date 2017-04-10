@@ -19,11 +19,6 @@ class GUI(QMainWindow):
             self.initUI()
 
 
-    def welcomeUI(self):
-        self.setGeometry(50, 50, 600, 600)
-        self.setWindowTitle('Bomberman')
-        self.show()
-
     def initUI(self):
         self.setGeometry(50, 50, 600, 600)
         self.setWindowTitle('Bomberman')
@@ -42,16 +37,12 @@ class GUI(QMainWindow):
         self.label_blocks1 = [[QLabel(self), block] for block in self.__game.blocks if not block.destroyable]
         for label in self.label_blocks1:
             label[0].setPixmap(QPixmap('block1.jpg'))
+            label[0].setGeometry(QRect(15 * label[1].x, 15 * label[1].y, 15, 15))
         self.label_blocks2 = [[QLabel(self), block] for block in self.__game.blocks if block.destroyable]
         for label in self.label_blocks2:
             label[0].setPixmap(QPixmap('block2.jpg'))
+            label[0].setGeometry(QRect(15 * label[1].x, 15 * label[1].y, 15, 15))
         self.show()
-
-    def client(self):
-        print('client')
-
-    def server(self):
-        print('server')
 
     def timerEvent(self, event):
         if event.timerId() == self.timer.timerId():
@@ -60,19 +51,22 @@ class GUI(QMainWindow):
             super.timerEvent(event)
 
     def paintEvent(self, *args, **kwargs):
-        #print(self.__game.players)
         try:
             new_bombs = set(self.__game.bombs).difference(set(self.bombs))
             if len(new_bombs) > 0:
                 self.bombs.extend(list(new_bombs))
                 for bomb in new_bombs:
                     self.label_bombs.append([self.labels_for_bombs.pop(), bomb])
-                    print(bomb)
 
-            for label in self.label_players + self.label_blocks1 + self.label_blocks2 + self.label_bombs:
+            for label in self.label_players  + self.label_bombs:
+                #if isinstance(label[1], Player): print(label[1])
                 if label[1].alive:
                     label[0].setGeometry(QRect(15 * label[1].x, 15 * label[1].y, 15, 15))
                 else:
+                    label[0].hide()
+
+            for label in self.label_blocks2:
+                if not label[1].alive:
                     label[0].hide()
         except:
             pass
@@ -107,12 +101,9 @@ class GUI(QMainWindow):
                 if isinstance(game_object, Player):
                     self.__game.players[int(game_object.id) - 1].x = (int(game_object.x))
                     self.__game.players[int(game_object.id) - 1].y = (int(game_object.y))
-                    print( self.label_players[int(game_object.id) - 1][1])
                     self.label_players[int(game_object.id) - 1][1] = game_object
-                    print(self.label_players[int(game_object.id) - 1][1])
                 else:
                     self.__game.bomb_it(game_object)
-
 
     def send(self, game_object):
         self.clientsocket.send(str(game_object).encode('utf-8'))
@@ -135,7 +126,6 @@ class GUI(QMainWindow):
         game = jsonpickle.decode(resp)
         self.__game = game
         threading.Thread(target=self.recieve, args=(self.clientsocket,)).start()
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
